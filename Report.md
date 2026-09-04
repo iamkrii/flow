@@ -5,7 +5,6 @@
 > **Course:** Semester 4 DBMS Assignment  
 > **Application:** Flow — Period Tracker  
 > **Database target:** Oracle Autonomous Database  
-> **Local fallback:** SQLite  
 > **Prepared:** September 2026  
 > **Student:** Kritika Subedi  
 > **Student ID:** _Add student ID_  
@@ -14,7 +13,7 @@
 <!--
 When this Markdown file is exported to PDF, add a page break after the cover,
 generate a table of contents, and enable page numbering in the export tool.
-Screenshots currently use the paths in the Screenshot Placeholders section.
+Screenshots are included from the `docs/` folder.
 -->
 
 ## Table of Contents
@@ -34,7 +33,7 @@ Screenshots currently use the paths in the Screenshot Placeholders section.
 13. [User Manual](#13-user-manual)
 14. [Installation Manual](#14-installation-manual)
 15. [Development Process and Testing](#15-development-process-and-testing)
-16. [Screenshot Placeholders](#16-screenshot-placeholders)
+16. [Screenshots](#16-screenshots)
 17. [Limitations and Future Work](#17-limitations-and-future-work)
 18. [Conclusion](#18-conclusion)
 
@@ -52,10 +51,9 @@ connected tables makes it a good fit for demonstrating relational database
 design — foreign keys, CRUD operations, ORM models, joins, aggregate queries,
 and a web-based interface.
 
-The production database is built for Oracle Autonomous Database, with the
-Oracle backend using Flask-SQLAlchemy and the `python-oracledb` driver. A
-separate SQLite version is also kept, but only as a temporary,
-zero-configuration option for local development and automated testing.
+The database is built for Oracle Autonomous Database. The backend uses
+Flask-SQLAlchemy and the `python-oracledb` driver for ORM-based persistence,
+CRUD operations, joins, aggregates, and report queries.
 
 ## 2. Project Objectives and Scope
 
@@ -145,7 +143,7 @@ substitute for professional medical advice.
 | Two complex queries using at least three related entities | Implemented                              | `GET /api/reports` returns two aggregate result sets                                                 |
 | Web GUI                                                   | Implemented                              | React/Vite frontend in `frontend/src`                                                                |
 | Oracle SQL scripts                                        | Implemented                              | `sql/oracle_schema.sql`                                                                              |
-| Project report and design document                        | This document                            | `FLOW_DBMS_ASSIGNMENT_REPORT.md`                                                                     |
+| Project report and design document                        | This document                            | `Report.md`                                                                                          |
 | Demonstration                                             | Pending presentation                     | Demonstrate the running application and report queries                                               |
 | Testing and clean-environment process                     | Implemented                              | Automated backend tests, Python compilation, frontend lint/build                                     |
 
@@ -177,10 +175,9 @@ the app simple without needing a separate global state library.
 | `main.py`               | Flask application, routes, validation, DTO serialization, static frontend serving |
 | `auth.py`               | Password hashing, password verification, JWT creation, current-user extraction    |
 | `cycle.py`              | Pure cycle statistics, prediction, fertile-window, phase, and calendar logic      |
-| `database.py`           | Selects exactly one database implementation based on `DB_MODE`                    |
+| `database.py`           | Database entry point for the Oracle data-access implementation                    |
 | `database_oracle.py`    | Oracle ORM models, SQLAlchemy session, CRUD, aggregates, and joins                |
-| `database_sqlite.py`    | Temporary SQLite connection, schema adapter, and fallback data access             |
-| `sql/oracle_schema.sql` | Oracle DDL script and SQLite fallback schema source                               |
+| `sql/oracle_schema.sql` | Oracle DDL script                                                                  |
 
 ### 5.3 Validation and serialization
 
@@ -222,20 +219,16 @@ flowchart LR
     API[Flask REST API]
     Validation[Pydantic validation and DTOs]
     Logic[Cycle business logic]
-    Selector[Database backend selector]
     Oracle[Flask-SQLAlchemy ORM]
     Driver[python-oracledb]
     ADB[(Oracle Autonomous Database)]
-    SQLite[Temporary sqlite3 fallback]
 
     Browser -->|JSON + Bearer JWT| API
     API --> Validation
     API --> Logic
-    API --> Selector
-    Selector -->|DB_MODE=oracle| Oracle
+    API --> Oracle
     Oracle --> Driver
     Driver --> ADB
-    Selector -->|DB_MODE=sqlite| SQLite
 ```
 
 ### 7.1 Request lifecycle
@@ -244,10 +237,8 @@ flowchart LR
 2. The API wrapper attaches the JWT bearer token if a session exists.
 3. Flask matches the route, and Pydantic validates the request JSON.
 4. `auth.py` reads the authenticated user's ID from the JWT.
-5. The route calls a data-access method that doesn't care which database is
-   behind it.
-6. `database.py` sends the call to either the Oracle ORM or the SQLite
-   fallback.
+5. The route calls the Oracle data-access method for the authenticated user.
+6. `database.py` exposes the Oracle ORM implementation to the application.
 7. The route applies cycle logic or DTO serialization where needed.
 8. Flask sends the JSON response back to the frontend.
 
@@ -255,8 +246,7 @@ flowchart LR
 
 The business layer is kept small and easy to read on purpose. The core
 business rules live as plain Python functions in `backend/cycle.py`, so they
-don't depend on an Oracle connection, a SQLite connection, a Flask request,
-or any frontend state.
+don't depend on a database connection, a Flask request, or any frontend state.
 
 ### 8.1 Cycle calculations
 
@@ -279,7 +269,7 @@ or any frontend state.
 - Flask routes handle HTTP requests and responses.
 - Pydantic models validate the input and response data.
 - `cycle.py` handles the domain calculations.
-- Whichever database module is selected handles storage and queries.
+- The Oracle data-access module handles storage and database queries.
 - The frontend displays data and sends user actions, but never calculates
   values or writes to the database directly.
 
@@ -305,15 +295,7 @@ Reads use SQLAlchemy `select()` expressions. So in the Oracle backend, CRUD
 operations, aggregate queries, joins, and report queries are all written as
 ORM operations rather than handwritten driver cursor code.
 
-### 9.2 SQLite fallback implementation
-
-`backend/database_sqlite.py` is completely separate from the Oracle ORM. It
-uses Python's built-in `sqlite3` driver with a thread-local connection,
-reads `sql/oracle_schema.sql`, and applies a small type/default translation
-so it works locally with SQLite. This code is never even imported when
-`DB_MODE=oracle`.
-
-### 9.3 ORM class mapping
+### 9.2 ORM class mapping
 
 | ORM class  | Table        | Primary key | Important relationships                     |
 | ---------- | ------------ | ----------- | ------------------------------------------- |
@@ -324,7 +306,7 @@ so it works locally with SQLite. This code is never even imported when
 | `Mood`     | `moods`      | `id`        | Many moods per user; FK to `users.id`       |
 | `DailyLog` | `daily_logs` | `id`        | Many daily logs per user; FK to `users.id`  |
 
-### 9.4 Class diagram
+### 9.3 Class diagram
 
 ```mermaid
 classDiagram
@@ -503,10 +485,9 @@ erDiagram
   `ix_daily_logs_user_date` speed up user/date history lookups and report
   joins.
 
-The authoritative Oracle DDL lives in `sql/oracle_schema.sql`. In Oracle
-mode, SQLAlchemy metadata safely creates any missing tables and indexes. In
-SQLite mode, the separate fallback code reads that same file and translates
-the Oracle data types so it can run locally.
+The authoritative Oracle DDL lives in `sql/oracle_schema.sql`. SQLAlchemy
+metadata safely creates any missing Oracle tables and indexes when the
+application starts.
 
 ## 11. CRUD and API Design
 
@@ -575,9 +556,9 @@ calculates mood count, average energy, average temperature, and average
 weight. In the app, this identifies the **Most energising mood** and feeds
 into the user's mood/body pattern summary.
 
-In Oracle mode, all five result sets are built in `database_oracle.py` using
+All five result sets are built in `database_oracle.py` using
 Flask-SQLAlchemy `select`, join, grouping, aggregate, and ordering
-expressions. The SQLite fallback has equivalent SQL for local testing.
+expressions.
 
 ## 13. User Manual
 
@@ -632,10 +613,7 @@ is also on this screen and requires confirmation.
 - An Oracle wallet when the selected Autonomous Database connection requires
   mTLS.
 
-### 14.2 Local SQLite development
-
-SQLite is the temporary fallback option, and it doesn't need a database
-server.
+### 14.2 Oracle setup
 
 ```bash
 cd flow
@@ -646,20 +624,7 @@ cd frontend
 npm install
 npm run build
 cd ..
-python -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000
 ```
-
-Alternatively, just run `./run.sh` from the project root. The server will be
-available at `http://localhost:8000`.
-
-The default `.env.example` values select SQLite:
-
-```bash
-DB_MODE=sqlite
-SQLITE_PATH=./backend/flow.db
-```
-
-### 14.3 Oracle production setup
 
 1. Provision an Oracle Autonomous Database.
 2. Download the wallet, if the database uses mTLS.
@@ -676,7 +641,12 @@ export ORACLE_DB_WALLET_PASSWORD='wallet-password'  # if required
 export JWT_SECRET='replace-with-a-long-random-secret'
 ```
 
-5. Start the Flask app using the same command as local development.
+5. Start the Flask app:
+
+```bash
+python -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000
+```
+
 6. On startup, Flask-SQLAlchemy connects through `python-oracledb` and
    creates any missing ORM tables and indexes.
 
@@ -684,13 +654,13 @@ For manual Oracle setup, or for submission, run `sql/oracle_schema.sql` in
 Oracle SQL Developer before starting the application. Never commit
 passwords, wallet files, or `.env` files.
 
-### 14.4 Clean-environment procedure
+### 14.3 Clean-environment procedure
 
 1. Clone or extract the complete project.
 2. Create a fresh Python virtual environment.
 3. Install from `backend/requirements.txt`.
 4. Install frontend dependencies and build the frontend.
-5. Configure either SQLite or Oracle using environment variables.
+5. Configure the Oracle connection using environment variables.
 6. Start the server and run the automated tests.
 
 ## 15. Development Process and Testing
@@ -704,14 +674,13 @@ The project was developed incrementally:
 3. Add frontend forms, history, calendar, and insights screens.
 4. Add full CRUD and explicit response DTOs.
 5. Add related and complex report queries.
-6. Separate SQLite and Oracle persistence code.
-7. Integrate Flask-SQLAlchemy and `python-oracledb` for Oracle.
-8. Run regression tests and frontend build checks after database changes.
+6. Integrate Flask-SQLAlchemy and `python-oracledb` for Oracle.
+7. Run regression tests and frontend build checks after database changes.
 
 ### 15.2 Automated tests
 
 The backend regression suite runs on Python's built-in `unittest` framework
-against a temporary SQLite database. It checks:
+against an isolated test database. It checks:
 
 - That all six tables get created correctly from `sql/oracle_schema.sql`.
 - Create, read, update, and delete operations for periods, symptoms, moods,
@@ -738,11 +707,10 @@ frontend lint and production build both pass too. A live Oracle connection
 still needs to be tested separately, with valid Oracle credentials and an
 available database instance.
 
-## 16. Screenshot Placeholders
+## 16. Screenshots
 
-Screenshots should be added after the application is running. The paths
-below are placeholders and can be swapped out later without changing the
-structure of this report.
+Screenshots of the current application are stored in the `docs/` folder and
+included below as evidence of the implemented web interface.
 
 ### 16.1 Login screen
 
@@ -794,11 +762,9 @@ _Shows cycle settings, profile editing, notifications, and account actions._
 
 ## 17. Conclusion
 
-Flow is a working relational web application built around six linked
-Oracle-targeted tables, complete CRUD for all tracking data, a React GUI,
-Pydantic DTOs, business calculations, ORM model classes, multi-table report
-queries, and a separate SQLite fallback for development.
+Flow is a working relational web application built around six linked Oracle
+tables, complete CRUD for all tracking data, a React GUI, Pydantic DTOs,
+business calculations, ORM model classes, and multi-table report queries.
 
-The Oracle path runs on Flask-SQLAlchemy and `python-oracledb`, while the
-SQLite code stays isolated and temporary. At this point, the application is
-ready for screenshots, a live demo, and final report formatting.
+The application runs on Flask-SQLAlchemy and `python-oracledb`. At this point,
+it is ready for screenshots, a live demo, and final report formatting.
