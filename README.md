@@ -12,6 +12,10 @@ From the project root:
 
 The script builds the frontend and starts the server at http://localhost:8000.
 
+## Documentation
+
+- [DBMS assignment report](docs/Report.md)
+
 ## Features
 
 - 🔐 Email/password auth (JWT tokens, bcrypt hashing)

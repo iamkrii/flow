@@ -13,7 +13,7 @@
 <!--
 When this Markdown file is exported to PDF, add a page break after the cover,
 generate a table of contents, and enable page numbering in the export tool.
-Screenshots are included from the `docs/` folder.
+Screenshots are included from the `screenshots/` folder beside this report.
 -->
 
 ## Table of Contents
@@ -709,54 +709,55 @@ available database instance.
 
 ## 16. Screenshots
 
-Screenshots of the current application are stored in the `docs/` folder and
-included below as evidence of the implemented web interface.
+Screenshots of the current application are stored in the `screenshots/`
+folder beside this report and included below as evidence of the implemented
+web interface.
 
 ### 16.1 Login screen
 
-![Login screen](docs/login.png)
+![Login screen](screenshots/login.png)
 
 _Shows the login form and application branding._
 
 ### 16.2 Registration screen
 
-![Registration screen](docs/signup.png)
+![Registration screen](screenshots/signup.png)
 
 _Shows account creation validation and fields._
 
 ### 16.3 Dashboard
 
-![Dashboard](docs/dashboard.png)
+![Dashboard](screenshots/dashboard.png)
 
 _Shows current cycle phase, prediction, statistics, and daily summary._
 
 ### 16.4 Calendar
 
-![Calendar](docs/calendar.png)
+![Calendar](screenshots/calendar.png)
 
 _Shows logged periods, predicted periods, fertile days, and ovulation._
 
 ### 16.5 Logging screen
 
-![Logging screen](docs/log.png)
+![Logging screen](screenshots/log.png)
 
 _Shows period, symptom, mood, and daily-log entry forms._
 
 ### 16.6 History screen
 
-![History screen](docs/history.png)
+![History screen](screenshots/history.png)
 
 _Shows grouped records, search, edit, and delete controls._
 
 ### 16.7 Insights and report queries
 
-![Insights screen](docs/insights.png)
+![Insights screen](screenshots/insights.png)
 
 _Shows charts, statistics, and user-facing personal patterns._
 
 ### 16.8 Settings screen
 
-![Settings screen](docs/settings.png)
+![Settings screen](screenshots/settings.png)
 
 _Shows cycle settings, profile editing, notifications, and account actions._
 
