@@ -7,7 +7,7 @@
 > **Database target:** Oracle Autonomous Database  
 > **Prepared:** September 2026  
 > **Student:** Kritika Subedi  
-> **Student ID:** _Add student ID_  
+> **Student ID:** LF00014001893
 > **Institution:** CSIT, KFA
 
 <!--
@@ -177,7 +177,7 @@ the app simple without needing a separate global state library.
 | `cycle.py`              | Pure cycle statistics, prediction, fertile-window, phase, and calendar logic      |
 | `database.py`           | Database entry point for the Oracle data-access implementation                    |
 | `database_oracle.py`    | Oracle ORM models, SQLAlchemy session, CRUD, aggregates, and joins                |
-| `sql/oracle_schema.sql` | Oracle DDL script                                                                  |
+| `sql/oracle_schema.sql` | Oracle DDL script                                                                 |
 
 ### 5.3 Validation and serialization
 
