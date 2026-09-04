@@ -6,12 +6,33 @@ cd "$(dirname "$0")"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# --- 1. Python 3 ---
+# --- 1. Python 3 + project virtual environment ---
 if ! have python3; then
   echo "==> Installing Python 3..."
   if have apt-get; then sudo apt-get update && sudo apt-get install -y python3 python3-pip
   elif have brew; then brew install python
   else echo "Please install Python 3 from https://python.org and re-run."; exit 1; fi
+fi
+
+# Activate the project environment before installing or running anything else.
+if [ ! -f ".venv/bin/activate" ]; then
+  echo "==> Creating Python virtual environment..."
+  if ! python3 -m venv .venv; then
+    if have apt-get; then
+      echo "==> Installing Python venv support..."
+      sudo apt-get update && sudo apt-get install -y python3-venv
+      python3 -m venv .venv
+    else
+      echo "Could not create .venv. Ensure Python's venv module is installed."
+      exit 1
+    fi
+  fi
+fi
+
+if [ "${VIRTUAL_ENV:-}" != "$PWD/.venv" ]; then
+  echo "==> Activating .venv..."
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
 fi
 
 # --- 2. Node.js (+ npm) ---
@@ -24,7 +45,7 @@ fi
 
 # --- 3. Backend packages ---
 echo "==> Installing backend packages (pip)..."
-python3 -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements.txt
 
 # --- 4. Frontend packages + build (yarn if you have it, otherwise npm) ---
 echo "==> Installing frontend packages & building..."
@@ -36,4 +57,4 @@ cd ..
 
 # --- 5. Start the server ---
 echo "==> Done. Server starting at http://localhost:8000"
-python3 -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000
+python -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000
