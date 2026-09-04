@@ -16,6 +16,24 @@ export default function Insights({ overview, periods, reports, dataError, onRetr
     return out
   }, [starts])
 
+  // The report endpoint combines related records and aggregates on the
+  // server. Turn those results into plain-language guidance for the user.
+  const personalPatterns = useMemo(() => {
+    const related = reports?.related_queries || {}
+    const complex = reports?.complex_queries || {}
+    const periodSettings = (related.period_settings || []).find((row) => row.period_id)
+    const periodSymptoms = (related.period_symptoms || [])[0]
+    const dailyMood = (related.daily_moods || [])[0]
+    const recurringSymptom = (complex.symptoms_by_period || [])[0]
+    const moodPatterns = complex.mood_measurements || []
+    const energisingMood = moodPatterns.reduce((best, current) => {
+      if (!best) return current
+      return Number(current.average_energy) > Number(best.average_energy) ? current : best
+    }, null)
+
+    return { periodSettings, periodSymptoms, dailyMood, recurringSymptom, energisingMood }
+  }, [reports])
+
   if (!overview) {
     return (
       <div className="card empty-state" role="alert">
@@ -32,12 +50,7 @@ export default function Insights({ overview, periods, reports, dataError, onRetr
   const top = overview?.top_symptoms || []
   const moods = overview?.mood_distribution || {}
   const moodTotal = Object.values(moods).reduce((a, b) => a + b, 0)
-  const related = reports?.related_queries || {}
-  const complex = reports?.complex_queries || {}
-  const periodSymptoms = related.period_symptoms || []
-  const dailyMoods = related.daily_moods || []
-  const symptomSummary = complex.symptoms_by_period || []
-  const moodSummary = complex.mood_measurements || []
+  const { periodSettings, periodSymptoms, dailyMood, recurringSymptom, energisingMood } = personalPatterns
 
   return (
     <>
@@ -114,33 +127,57 @@ export default function Insights({ overview, periods, reports, dataError, onRetr
       <div className="two-grid" style={{ marginTop: 20 }}>
         <article className="card">
           <div className="card-head">
-            <h3>Related database queries</h3>
-            <p className="muted sm-text">Live joined records</p>
+            <h3>Your cycle patterns</h3>
+            <p className="muted sm-text">A clearer view of your recent tracking</p>
           </div>
           <ul className="stats-list">
-            <li><span>Periods + settings</span><b>{(related.period_settings || []).length} rows</b></li>
-            <li><span>Periods + symptoms</span><b>{periodSymptoms.length} rows</b></li>
-            <li><span>Daily logs + moods</span><b>{dailyMoods.length} rows</b></li>
+            <li>
+              <span>Typical cycle</span>
+              <b>{periodSettings ? `${periodSettings.avg_cycle_length} days` : 'Log a period'}</b>
+            </li>
+            <li>
+              <span>Typical period</span>
+              <b>{periodSettings ? `${periodSettings.avg_period_length} days` : 'Log a period'}</b>
+            </li>
+            <li>
+              <span>Latest period symptoms</span>
+              <b>{periodSymptoms ? `${periodSymptoms.symptom_count} logged` : 'None yet'}</b>
+            </li>
           </ul>
-          {periodSymptoms.length > 0 && (
+          {periodSymptoms && (
             <p className="muted sm-text" style={{ marginTop: 12 }}>
-              Latest period: {periodSymptoms[0].start_date || '–'} · {periodSymptoms[0].symptom_count} symptom(s)
+              {periodSymptoms.start_date ? `Period starting ${fmtLong(periodSymptoms.start_date)} averaged ${Number(periodSymptoms.average_severity || 0).toFixed(1)}/5 symptom severity.` : 'Add a period and symptoms to see a pattern.'}
             </p>
           )}
         </article>
 
         <article className="card">
           <div className="card-head">
-            <h3>Complex query summaries</h3>
-            <p className="muted sm-text">Three-table aggregates</p>
+            <h3>Patterns to notice</h3>
+            <p className="muted sm-text">Trends across your logged days</p>
           </div>
           <ul className="stats-list">
-            <li><span>Symptoms across periods</span><b>{symptomSummary.length} types</b></li>
-            <li><span>Moods with measurements</span><b>{moodSummary.length} types</b></li>
+            <li>
+              <span>Most recurring symptom</span>
+              <b>{recurringSymptom ? recurringSymptom.symptom : 'Not enough data'}</b>
+            </li>
+            <li>
+              <span>Most energising mood</span>
+              <b>{energisingMood ? energisingMood.mood : 'Not enough data'}</b>
+            </li>
+            <li>
+              <span>Latest mood check-in</span>
+              <b>{dailyMood?.mood || 'No mood logged'}</b>
+            </li>
           </ul>
-          {symptomSummary[0] && (
+          {recurringSymptom && (
             <p className="muted sm-text" style={{ marginTop: 12 }}>
-              Most common: {symptomSummary[0].symptom} ({symptomSummary[0].symptom_count} logs)
+              {recurringSymptom.symptom} appears {recurringSymptom.symptom_count} time(s) across {recurringSymptom.periods_with_symptom} period(s).
+            </p>
+          )}
+          {dailyMood && !recurringSymptom && (
+            <p className="muted sm-text" style={{ marginTop: 12 }}>
+              Latest check-in: {dailyMood.mood || 'No mood'}{dailyMood.energy ? ` · energy ${dailyMood.energy}/5` : ''}.
             </p>
           )}
         </article>
