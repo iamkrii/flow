@@ -36,4 +36,4 @@ cd ..
 
 # --- 5. Start the server ---
 echo "==> Done. Server starting at http://localhost:8000"
-uvicorn backend.main:app --reload --port 8000
+python3 -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000

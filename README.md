@@ -1,7 +1,7 @@
 # 🌸 Flow — Period Tracker
 
 A fully functional period & cycle tracking web app.
-**Backend:** FastAPI · **DB:** Oracle Cloud (Autonomous) or SQLite (zero-config dev) · **Frontend:** React (Vite).
+**Backend:** Flask · **DB:** Oracle Cloud (Autonomous) or SQLite (zero-config dev) · **Frontend:** React (Vite).
 
 ## Quick start (one script)
 
@@ -32,7 +32,7 @@ The script builds the frontend and starts the server at http://localhost:8000.
 | Layer | Technology | Role |
 |---|---|---|
 | Frontend | React 18 + Vite, Recharts, Phosphor icons | UI, charts, calendar |
-| Backend | FastAPI (Python) | REST API, validation, predictions |
+| Backend | Flask (Python) + Pydantic | REST API, validation, predictions |
 | Auth | bcrypt + PyJWT | password hashing, token sessions |
 | Database | SQLite (dev) / Oracle Autonomous (prod) | persistence |
 
@@ -59,8 +59,8 @@ Every call follows the same path:
 
 ```
 React page → api.js (adds Authorization: Bearer <jwt>)
-           → FastAPI route (Pydantic validates the JSON body)
-           → get_current_user_id() dependency decodes the token → user_id
+           → Flask route (Pydantic validates the JSON body)
+           → get_current_user_id() decodes the token → user_id
            → database.py runs SQL scoped by that user_id
            → rows returned as plain JSON
 ```
@@ -115,7 +115,7 @@ Worked example: starts Jul 25 → Aug 21 gives one 27-day gap → avg 27 → nex
 - Routing is a `tab` string in state — no router library; nav components just set it.
 - `CycleCharts.jsx` renders the orange ghost-bar cycle chart and mood donut with Recharts; the calendar is hand-rolled (`CalendarCells`) because the day-tag styling is domain-specific.
 - Loading states are skeleton components shaped like their real counterparts (`Skeletons.jsx`); failures render error states with retry — nothing spins forever.
-- Build pipeline: `npm run build` = ESLint (flat config, react-hooks rules on) then `vite build` → static assets in `frontend/dist`. FastAPI mounts `/assets` from there and returns `index.html` for any unknown non-API GET, so deep links work. In dev, `npm run dev` serves on :5173 and proxies `/api` to :8000.
+- Build pipeline: `npm run build` = ESLint (flat config, react-hooks rules on) then `vite build` → static assets in `frontend/dist`. Flask serves `/assets` from there and returns `index.html` for any unknown non-API GET, so deep links work. In dev, `npm run dev` serves on :5173 and proxies `/api` to :8000.
 
 ## Run it
 
@@ -125,7 +125,7 @@ Worked example: starts Jul 25 → Aug 21 gives one 27-day gap → avg 27 → nex
 cd flow/backend
 python3.12 -m pip install -r requirements.txt
 cd ..   # repo root /flow so `backend` package resolves
-uvicorn backend.main:app --reload --port 8000
+python3 -m flask --app backend.main run --debug --host 0.0.0.0 --port 8000
 ```
 
 Open http://localhost:8000

@@ -1,16 +1,16 @@
-"""Main FastAPI application: auth + periods + symptoms + moods + daily logs + stats."""
+"""Main Flask application: auth + periods + symptoms + moods + daily logs + stats."""
 import datetime as dt
+import os
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr, Field
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from flask.json.provider import DefaultJSONProvider
+from pydantic import BaseModel, EmailStr, Field, ValidationError
 
 from . import config, database as db, cycle
 from .auth import (
-    bearer,
+    AuthenticationError,
     create_token,
     get_current_user_id,
     hash_password,
@@ -18,20 +18,63 @@ from .auth import (
     verify_password,
 )
 
-app = FastAPI(title=config.APP_NAME, version="1.0.0")
+class FlowJSONProvider(DefaultJSONProvider):
+    """Keep API date responses in the existing ISO-8601 format."""
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    @staticmethod
+    def default(value):
+        if isinstance(value, (dt.date, dt.datetime)):
+            return value.isoformat()
+        return DefaultJSONProvider.default(value)
+
+
+class FlowFlask(Flask):
+    json_provider_class = FlowJSONProvider
+
+
+FRONTEND_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend"))
+DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
+
+app = FlowFlask(
+    __name__,
+    static_folder=os.path.join(DIST_DIR, "assets"),
+    static_url_path="/assets",
 )
+CORS(app)
 
 
-@app.on_event("startup")
-def startup():
-    db.init_db()
+class APIError(Exception):
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+@app.errorhandler(APIError)
+def handle_api_error(exc):
+    return jsonify(detail=exc.detail), exc.status_code
+
+
+@app.errorhandler(AuthenticationError)
+def handle_auth_error(exc):
+    return jsonify(detail=exc.detail), 401
+
+
+@app.errorhandler(ValidationError)
+def handle_validation_error(exc):
+    return jsonify(detail=exc.errors()), 422
+
+
+def parse_body(schema):
+    data = request.get_json(silent=True)
+    if data is None:
+        raise APIError(422, "Request body must be valid JSON")
+    validate = getattr(schema, "model_validate", None)
+    return validate(data) if validate else schema.parse_obj(data)
+
+
+# Flask has no ASGI startup event; initialize once when the application loads.
+db.init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -89,25 +132,17 @@ def iso(d) -> str:
 # ---------------------------------------------------------------------------
 # Static frontend — serves the built React app (frontend/dist)
 # ---------------------------------------------------------------------------
-import os
-FRONTEND_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend"))
-DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
-
-app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
-
-
-@app.get("/", include_in_schema=False)
+@app.get("/")
 def index():
-    return FileResponse(os.path.join(DIST_DIR, "index.html"))
+    return send_from_directory(DIST_DIR, "index.html")
 
 
-@app.exception_handler(404)
-async def not_found(request, exc):
+@app.errorhandler(404)
+def not_found(exc):
     # SPA fallback: unknown non-API GET paths get the app shell
-    if request.method == "GET" and not request.url.path.startswith(config.API_PREFIX):
-        return FileResponse(os.path.join(DIST_DIR, "index.html"))
-    from fastapi.responses import JSONResponse
-    return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
+    if request.method == "GET" and not request.path.startswith(config.API_PREFIX):
+        return send_from_directory(DIST_DIR, "index.html")
+    return jsonify(detail="Not Found"), 404
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +150,11 @@ async def not_found(request, exc):
 # ---------------------------------------------------------------------------
 
 @app.post(f"{config.API_PREFIX}/auth/signup")
-def signup(body: SignupIn):
+def signup():
+    body = parse_body(SignupIn)
     existing = db.q(None, "SELECT id FROM users WHERE lower(email)=lower(:e)", {"e": body.email}, one=True)
     if existing:
-        raise HTTPException(400, "An account with this email already exists")
+        raise APIError(400, "An account with this email already exists")
     uid = new_id()
     db.ex(
         "INSERT INTO users (id, email, password_hash, name, created_at) VALUES (:i,:e,:p,:n,SYSTIMESTAMP)"
@@ -135,10 +171,11 @@ def signup(body: SignupIn):
 
 
 @app.post(f"{config.API_PREFIX}/auth/login")
-def login(body: LoginIn):
+def login():
+    body = parse_body(LoginIn)
     user = db.q(None, "SELECT * FROM users WHERE lower(email)=lower(:e)", {"e": body.email}, one=True)
     if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(401, "Incorrect email or password")
+        raise APIError(401, "Incorrect email or password")
     return {
         "token": create_token(user["id"]),
         "user_id": user["id"],
@@ -147,12 +184,13 @@ def login(body: LoginIn):
 
 
 @app.get(f"{config.API_PREFIX}/me")
-def me(user_id: str = Depends(get_current_user_id)):
+def me():
+    user_id = get_current_user_id()
     u = db.q(None, "SELECT id, email, name, created_at FROM users WHERE id=:i", {"i": user_id}, one=True)
     if config.DB_MODE == "oracle":
         pass
     if not u:
-        raise HTTPException(404, "User not found")
+        raise APIError(404, "User not found")
     s = db.q(None, "SELECT * FROM settings WHERE user_id=:u", {"u": user_id}, one=True) or {}
     return {"user": u, "settings": s}
 
@@ -162,7 +200,9 @@ def me(user_id: str = Depends(get_current_user_id)):
 # ---------------------------------------------------------------------------
 
 @app.put(f"{config.API_PREFIX}/settings")
-def update_settings(body: SettingsIn, user_id: str = Depends(get_current_user_id)):
+def update_settings():
+    user_id = get_current_user_id()
+    body = parse_body(SettingsIn)
     row = db.q(None, "SELECT user_id FROM settings WHERE user_id=:u", {"u": user_id}, one=True)
     if not row:
         db.ex(
@@ -189,7 +229,8 @@ def update_settings(body: SettingsIn, user_id: str = Depends(get_current_user_id
 # ---------------------------------------------------------------------------
 
 @app.get(f"{config.API_PREFIX}/periods")
-def list_periods(user_id: str = Depends(get_current_user_id)):
+def list_periods():
+    user_id = get_current_user_id()
     rows = db.q(None, "SELECT * FROM periods WHERE user_id=:u ORDER BY start_date DESC", {"u": user_id})
     for r in rows:
         r["start_date"] = iso(r["start_date"])
@@ -199,7 +240,9 @@ def list_periods(user_id: str = Depends(get_current_user_id)):
 
 
 @app.post(f"{config.API_PREFIX}/periods")
-def add_period(body: PeriodIn, user_id: str = Depends(get_current_user_id)):
+def add_period():
+    user_id = get_current_user_id()
+    body = parse_body(PeriodIn)
     pid = new_id()
     db.ex(
         "INSERT INTO periods (id, user_id, start_date, end_date, flow_level, notes) VALUES (:i,:u,:s,:e,:f,:n)",
@@ -209,23 +252,26 @@ def add_period(body: PeriodIn, user_id: str = Depends(get_current_user_id)):
     return {"id": pid}
 
 
-@app.put(f"{config.API_PREFIX}/periods/{{pid}}")
-def update_period(pid: str, body: PeriodIn, user_id: str = Depends(get_current_user_id)):
+@app.put(f"{config.API_PREFIX}/periods/<pid>")
+def update_period(pid: str):
+    user_id = get_current_user_id()
+    body = parse_body(PeriodIn)
     n = db.ex(
         "UPDATE periods SET start_date=:s, end_date=:e, flow_level=:f, notes=:n2 WHERE id=:i AND user_id=:u",
         {"s": body.start_date, "e": body.end_date or None, "f": body.flow_level,
          "n2": body.notes, "i": pid, "u": user_id},
     )
     if n == 0:
-        raise HTTPException(404, "Period entry not found")
+        raise APIError(404, "Period entry not found")
     return {"ok": True}
 
 
-@app.delete(f"{config.API_PREFIX}/periods/{{pid}}")
-def delete_period(pid: str, user_id: str = Depends(get_current_user_id)):
+@app.delete(f"{config.API_PREFIX}/periods/<pid>")
+def delete_period(pid: str):
+    user_id = get_current_user_id()
     n = db.ex("DELETE FROM periods WHERE id=:i AND user_id=:u", {"i": pid, "u": user_id})
     if n == 0:
-        raise HTTPException(404, "Not found")
+        raise APIError(404, "Not found")
     return {"ok": True}
 
 
@@ -234,7 +280,8 @@ def delete_period(pid: str, user_id: str = Depends(get_current_user_id)):
 # ---------------------------------------------------------------------------
 
 @app.get(f"{config.API_PREFIX}/symptoms")
-def list_symptoms(user_id: str = Depends(get_current_user_id)):
+def list_symptoms():
+    user_id = get_current_user_id()
     rows = db.q(None, "SELECT * FROM symptoms WHERE user_id=:u ORDER BY log_date DESC", {"u": user_id})
     for r in rows:
         r["log_date"] = iso(r["log_date"])
@@ -242,7 +289,9 @@ def list_symptoms(user_id: str = Depends(get_current_user_id)):
 
 
 @app.post(f"{config.API_PREFIX}/symptoms")
-def add_symptom(body: SymptomIn, user_id: str = Depends(get_current_user_id)):
+def add_symptom():
+    user_id = get_current_user_id()
+    body = parse_body(SymptomIn)
     sid = new_id()
     db.ex(
         "INSERT INTO symptoms (id, user_id, log_date, symptom, severity, notes) VALUES (:i,:u,:d,:s,:v,:n)",
@@ -252,8 +301,9 @@ def add_symptom(body: SymptomIn, user_id: str = Depends(get_current_user_id)):
     return {"id": sid}
 
 
-@app.delete(f"{config.API_PREFIX}/symptoms/{{sid}}")
-def delete_symptom(sid: str, user_id: str = Depends(get_current_user_id)):
+@app.delete(f"{config.API_PREFIX}/symptoms/<sid>")
+def delete_symptom(sid: str):
+    user_id = get_current_user_id()
     db.ex("DELETE FROM symptoms WHERE id=:i AND user_id=:u", {"i": sid, "u": user_id})
     return {"ok": True}
 
@@ -263,7 +313,8 @@ def delete_symptom(sid: str, user_id: str = Depends(get_current_user_id)):
 # ---------------------------------------------------------------------------
 
 @app.get(f"{config.API_PREFIX}/moods")
-def list_moods(user_id: str = Depends(get_current_user_id)):
+def list_moods():
+    user_id = get_current_user_id()
     rows = db.q(None, "SELECT * FROM moods WHERE user_id=:u ORDER BY log_date DESC", {"u": user_id})
     for r in rows:
         r["log_date"] = iso(r["log_date"])
@@ -271,7 +322,9 @@ def list_moods(user_id: str = Depends(get_current_user_id)):
 
 
 @app.post(f"{config.API_PREFIX}/moods")
-def add_mood(body: MoodIn, user_id: str = Depends(get_current_user_id)):
+def add_mood():
+    user_id = get_current_user_id()
+    body = parse_body(MoodIn)
     mid = new_id()
     db.ex(
         "INSERT INTO moods (id, user_id, log_date, mood, energy) VALUES (:i,:u,:d,:m,:e)",
@@ -280,8 +333,9 @@ def add_mood(body: MoodIn, user_id: str = Depends(get_current_user_id)):
     return {"id": mid}
 
 
-@app.delete(f"{config.API_PREFIX}/moods/{{mid}}")
-def delete_mood(mid: str, user_id: str = Depends(get_current_user_id)):
+@app.delete(f"{config.API_PREFIX}/moods/<mid>")
+def delete_mood(mid: str):
+    user_id = get_current_user_id()
     db.ex("DELETE FROM moods WHERE id=:i AND user_id=:u", {"i": mid, "u": user_id})
     return {"ok": True}
 
@@ -291,7 +345,8 @@ def delete_mood(mid: str, user_id: str = Depends(get_current_user_id)):
 # ---------------------------------------------------------------------------
 
 @app.get(f"{config.API_PREFIX}/daily")
-def list_daily(user_id: str = Depends(get_current_user_id)):
+def list_daily():
+    user_id = get_current_user_id()
     rows = db.q(None, "SELECT * FROM daily_logs WHERE user_id=:u ORDER BY log_date DESC", {"u": user_id})
     for r in rows:
         r["log_date"] = iso(r["log_date"])
@@ -299,7 +354,9 @@ def list_daily(user_id: str = Depends(get_current_user_id)):
 
 
 @app.post(f"{config.API_PREFIX}/daily")
-def add_daily(body: DailyLogIn, user_id: str = Depends(get_current_user_id)):
+def add_daily():
+    user_id = get_current_user_id()
+    body = parse_body(DailyLogIn)
     did = new_id()
     db.ex(
         """INSERT INTO daily_logs (id, user_id, log_date, weight_kg, temperature_c, discharge, intercourse, medication, cramps, notes)
@@ -311,8 +368,9 @@ def add_daily(body: DailyLogIn, user_id: str = Depends(get_current_user_id)):
     return {"id": did}
 
 
-@app.delete(f"{config.API_PREFIX}/daily/{{did}}")
-def delete_daily(did: str, user_id: str = Depends(get_current_user_id)):
+@app.delete(f"{config.API_PREFIX}/daily/<did>")
+def delete_daily(did: str):
+    user_id = get_current_user_id()
     db.ex("DELETE FROM daily_logs WHERE id=:i AND user_id=:u", {"i": did, "u": user_id})
     return {"ok": True}
 
@@ -332,7 +390,8 @@ def _load_all(user_id):
 
 
 @app.get(f"{config.API_PREFIX}/overview")
-def overview(user_id: str = Depends(get_current_user_id)):
+def overview():
+    user_id = get_current_user_id()
     periods, settings = _load_all(user_id)
     ov = cycle.build_overview(periods, settings)
 
@@ -357,8 +416,9 @@ def overview(user_id: str = Depends(get_current_user_id)):
     return ov
 
 
-@app.get(f"{config.API_PREFIX}/calendar/{{year}}/{{month}}")
-def calendar(year: int, month: int, user_id: str = Depends(get_current_user_id)):
+@app.get(f"{config.API_PREFIX}/calendar/<int:year>/<int:month>")
+def calendar(year: int, month: int):
+    user_id = get_current_user_id()
     import calendar as cal
     first = dt.date(year, month, 1)
     last_day = cal.monthrange(year, month)[1]
@@ -369,8 +429,9 @@ def calendar(year: int, month: int, user_id: str = Depends(get_current_user_id))
 
 
 @app.get(f"{config.API_PREFIX}/history")
-def history(user_id: str = Depends(get_current_user_id)):
+def history():
     """Everything logged, grouped by date — powers the History tab."""
+    user_id = get_current_user_id()
     periods, _ = _load_all(user_id)
     sym = db.q(None, "SELECT * FROM symptoms WHERE user_id=:u ORDER BY log_date DESC", {"u": user_id})
     moods = db.q(None, "SELECT * FROM moods WHERE user_id=:u ORDER BY log_date DESC", {"u": user_id})
@@ -394,5 +455,4 @@ def history(user_id: str = Depends(get_current_user_id)):
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, debug=True)
