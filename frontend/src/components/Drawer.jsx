@@ -1,6 +1,6 @@
 import { icons } from './icons.jsx'
 
-export default function Drawer({ open, onClose, items, tab, setTab, user, onLogout }) {
+export default function Drawer({ open, onClose, items, tab, navigate, user, onLogout }) {
   return (
     <>
       <div className={'drawer-overlay' + (open ? ' show' : '')} onClick={onClose} />
@@ -11,11 +11,15 @@ export default function Drawer({ open, onClose, items, tab, setTab, user, onLogo
         </div>
         <nav className="side-nav" aria-label="Main menu">
           {items.map((it) => (
-            <button key={it.id} type="button"
+            <a key={it.id} href={it.path}
               className={'nav-item' + (tab === it.id ? ' active' : '')}
-              onClick={() => { setTab(it.id); onClose() }}>
+              aria-current={tab === it.id ? 'page' : undefined}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                event.preventDefault(); navigate(it.id); onClose()
+              }}>
               {icons[it.icon]}<span>{it.label}</span>
-            </button>
+            </a>
           ))}
         </nav>
         <div className="drawer-foot">

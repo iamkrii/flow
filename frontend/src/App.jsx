@@ -18,25 +18,65 @@ import Drawer from './components/Drawer.jsx'
 import PageHeader from './components/PageHeader.jsx'
 
 const NAV = [
-  { id: 'home', label: 'Dashboard', icon: 'home' },
-  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
-  { id: 'log', label: 'Log', icon: 'plus' },
-  { id: 'history', label: 'History', icon: 'history' },
-  { id: 'insights', label: 'Insights', icon: 'insights' },
-  { id: 'settings', label: 'Settings', icon: 'settings' },
+  { id: 'home', path: '/dashboard', label: 'Dashboard', icon: 'home' },
+  { id: 'calendar', path: '/calendar', label: 'Calendar', icon: 'calendar' },
+  { id: 'log', path: '/log', label: 'Log', icon: 'plus' },
+  { id: 'history', path: '/history', label: 'History', icon: 'history' },
+  { id: 'insights', path: '/insights', label: 'Insights', icon: 'insights' },
+  { id: 'settings', path: '/settings', label: 'Settings', icon: 'settings' },
 ]
+
+const AUTH_ROUTES = [
+  { id: 'login', path: '/login' },
+  { id: 'signup', path: '/signup' },
+]
+const ROUTES = [...NAV, ...AUTH_ROUTES]
+const TAB_BY_PATH = Object.fromEntries(ROUTES.map(({ id, path }) => [path, id]))
+const PATH_BY_TAB = Object.fromEntries(ROUTES.map(({ id, path }) => [id, path]))
+
+function currentTab() {
+  return TAB_BY_PATH[window.location.pathname] || 'home'
+}
 
 export default function App() {
   const [user, setUser] = useState(null)
   const [me, setMe] = useState(null)
   const [booting, setBooting] = useState(!!getToken())
-  const [tab, setTab] = useState('home')
+  const [tab, setTab] = useState(currentTab)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [overview, setOverview] = useState(null)
   const [periods, setPeriods] = useState([])
   const [dataError, setDataError] = useState(null)
 
   useEffect(() => registerToast(toast), [])
+
+  // A tiny History API router is enough for these static screens. It keeps
+  // navigation client-side while making browser back/forward and deep links work.
+  useEffect(() => {
+    const syncRoute = () => setTab(currentTab())
+    window.addEventListener('popstate', syncRoute)
+
+    if (!TAB_BY_PATH[window.location.pathname]) {
+      window.history.replaceState({}, '', getToken() ? '/dashboard' : '/login')
+      syncRoute()
+    }
+
+    return () => window.removeEventListener('popstate', syncRoute)
+  }, [])
+
+  const navigate = useCallback((nextTab, { replace = false } = {}) => {
+    const path = PATH_BY_TAB[nextTab] || PATH_BY_TAB.home
+    window.history[replace ? 'replaceState' : 'pushState']({}, '', path)
+    setTab(PATH_BY_TAB[nextTab] ? nextTab : 'home')
+    window.scrollTo(0, 0)
+  }, [])
+
+  useEffect(() => {
+    if (booting) return
+    const isAuthRoute = tab === 'login' || tab === 'signup'
+    if (!user && !isAuthRoute) navigate('login', { replace: true })
+    if (user && isAuthRoute) navigate('home', { replace: true })
+  }, [booting, navigate, tab, user])
 
   const refreshAll = useCallback(async () => {
     try {
@@ -77,12 +117,13 @@ export default function App() {
       setUser({ email: d.user.email, name: name || d.user.name || '' })
       setMe(d)
       await refreshAll()
+      navigate('home', { replace: true })
     } catch (e) { toast.error(e.message) }
   }
 
   async function handleLogout() {
     clearToken()
-    setUser(null); setMe(null); setOverview(null); setPeriods([]); setTab('home')
+    setUser(null); setMe(null); setOverview(null); setPeriods([]); navigate('login', { replace: true })
   }
 
   async function quickPeriodStart() {
@@ -100,14 +141,18 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <Auth onAuthed={handleAuthed} />
+        <Auth
+          mode={tab === 'signup' ? 'signup' : 'login'}
+          onModeChange={(mode) => navigate(mode)}
+          onAuthed={handleAuthed}
+        />
         <Toaster position="top-center" />
       </>
     )
   }
 
   const pages = {
-    home: <Dashboard overview={overview} periods={periods} go={setTab} dataError={dataError} onRetry={refreshAll} />,
+    home: <Dashboard overview={overview} periods={periods} go={navigate} dataError={dataError} onRetry={refreshAll} />,
     calendar: <CalendarPage periods={periods} onChanged={refreshAll} />,
     log: <LogPage onChanged={refreshAll} />,
     history: <HistoryPage onChanged={refreshAll} />,
@@ -118,13 +163,13 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar
-        items={NAV} tab={tab} setTab={setTab}
+        items={NAV} tab={tab} navigate={navigate}
         user={user} onLogout={handleLogout}
       />
       <MobileTopbar onMenu={() => setDrawerOpen(true)} />
       <Drawer
         open={drawerOpen} onClose={() => setDrawerOpen(false)}
-        items={NAV} tab={tab} setTab={setTab}
+        items={NAV} tab={tab} navigate={navigate}
         user={user} onLogout={handleLogout}
       />
       <div className="shell">
@@ -135,7 +180,7 @@ export default function App() {
         />
         <main className="content">{pages[tab]}</main>
       </div>
-      <BottomNav items={NAV} tab={tab} setTab={setTab} />
+      <BottomNav items={NAV} tab={tab} navigate={navigate} />
       <Toaster position="top-center" />
     </div>
   )

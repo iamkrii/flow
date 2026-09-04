@@ -112,7 +112,7 @@ Worked example: starts Jul 25 → Aug 21 gives one 27-day gap → avg 27 → nex
 ### Frontend architecture
 
 - `App.jsx` owns session state and loads shared data once (`overview` + `periods` via `refreshAll()`), passing it down as props. Screens that mutate data call `refreshAll()` after saving, so every view stays consistent without a global store.
-- Routing is a `tab` string in state — no router library; nav components just set it.
+- Routing uses the browser History API: app screens plus `/login` and `/signup` have their own URLs while navigation remains client-side, and Flask's SPA fallback supports direct links and refreshes.
 - `CycleCharts.jsx` renders the orange ghost-bar cycle chart and mood donut with Recharts; the calendar is hand-rolled (`CalendarCells`) because the day-tag styling is domain-specific.
 - Loading states are skeleton components shaped like their real counterparts (`Skeletons.jsx`); failures render error states with retry — nothing spins forever.
 - Build pipeline: `npm run build` = ESLint (flat config, react-hooks rules on) then `vite build` → static assets in `frontend/dist`. Flask serves `/assets` from there and returns `index.html` for any unknown non-API GET, so deep links work. In dev, `npm run dev` serves on :5173 and proxies `/api` to :8000.

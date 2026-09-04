@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { api, setToken } from '../api.js'
 
-export default function Auth({ onAuthed }) {
-  const [mode, setMode] = useState('login')
+export default function Auth({ mode, onModeChange, onAuthed }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -31,12 +30,18 @@ export default function Auth({ onAuthed }) {
         <div className="auth-logo"><span className="logo-mark">🌸</span> flow</div>
         <p className="tagline">Your cycle, understood.</p>
         <div className="auth-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={mode === 'login'}
+          <a href="/login" role="tab" aria-selected={mode === 'login'}
             className={mode === 'login' ? 'active' : ''}
-            onClick={() => setMode('login')}>Log in</button>
-          <button type="button" role="tab" aria-selected={mode === 'signup'}
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+              event.preventDefault(); onModeChange('login')
+            }}>Log in</a>
+          <a href="/signup" role="tab" aria-selected={mode === 'signup'}
             className={mode === 'signup' ? 'active' : ''}
-            onClick={() => setMode('signup')}>Sign up</button>
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+              event.preventDefault(); onModeChange('signup')
+            }}>Sign up</a>
         </div>
         <form onSubmit={submit} className="auth-form">
           <label className="field"><span>Email</span>
