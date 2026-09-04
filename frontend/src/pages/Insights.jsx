@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { fmtLong, fmt } from '../lib.js'
 import CycleCharts from '../components/CycleCharts.jsx'
 
-export default function Insights({ overview, periods, dataError, onRetry }) {
+export default function Insights({ overview, periods, reports, dataError, onRetry }) {
   // hooks first — early returns must come after all hooks
   const starts = useMemo(() =>
     [...new Set((periods || []).map(p => p.start_date))].sort(), [periods])
@@ -32,6 +32,12 @@ export default function Insights({ overview, periods, dataError, onRetry }) {
   const top = overview?.top_symptoms || []
   const moods = overview?.mood_distribution || {}
   const moodTotal = Object.values(moods).reduce((a, b) => a + b, 0)
+  const related = reports?.related_queries || {}
+  const complex = reports?.complex_queries || {}
+  const periodSymptoms = related.period_symptoms || []
+  const dailyMoods = related.daily_moods || []
+  const symptomSummary = complex.symptoms_by_period || []
+  const moodSummary = complex.mood_measurements || []
 
   return (
     <>
@@ -104,6 +110,41 @@ export default function Insights({ overview, periods, dataError, onRetry }) {
       </div>
 
       <CycleCharts overview={overview} periods={periods} />
+
+      <div className="two-grid" style={{ marginTop: 20 }}>
+        <article className="card">
+          <div className="card-head">
+            <h3>Related database queries</h3>
+            <p className="muted sm-text">Live joined records</p>
+          </div>
+          <ul className="stats-list">
+            <li><span>Periods + settings</span><b>{(related.period_settings || []).length} rows</b></li>
+            <li><span>Periods + symptoms</span><b>{periodSymptoms.length} rows</b></li>
+            <li><span>Daily logs + moods</span><b>{dailyMoods.length} rows</b></li>
+          </ul>
+          {periodSymptoms.length > 0 && (
+            <p className="muted sm-text" style={{ marginTop: 12 }}>
+              Latest period: {periodSymptoms[0].start_date || '–'} · {periodSymptoms[0].symptom_count} symptom(s)
+            </p>
+          )}
+        </article>
+
+        <article className="card">
+          <div className="card-head">
+            <h3>Complex query summaries</h3>
+            <p className="muted sm-text">Three-table aggregates</p>
+          </div>
+          <ul className="stats-list">
+            <li><span>Symptoms across periods</span><b>{symptomSummary.length} types</b></li>
+            <li><span>Moods with measurements</span><b>{moodSummary.length} types</b></li>
+          </ul>
+          {symptomSummary[0] && (
+            <p className="muted sm-text" style={{ marginTop: 12 }}>
+              Most common: {symptomSummary[0].symptom} ({symptomSummary[0].symptom_count} logs)
+            </p>
+          )}
+        </article>
+      </div>
     </>
   )
 }

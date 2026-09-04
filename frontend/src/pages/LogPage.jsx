@@ -22,7 +22,7 @@ export default function LogPage({ onChanged }) {
   async function saveSymptom(e) {
     e.preventDefault()
     try {
-      await api.addSymptom({ ...sf, notes: sf.notes.trim() })
+      await api.addSymptom({ log_date: sf.date, symptom: sf.symptom, severity: sf.severity, notes: sf.notes.trim() })
       toast.success('Symptom logged ✓')
       setSf((s) => ({ ...s, notes: '' })); onChanged()
     } catch (err) { toast.error(err.message) }
@@ -30,7 +30,7 @@ export default function LogPage({ onChanged }) {
   async function saveMood(e) {
     e.preventDefault()
     try {
-      await api.addMood(mf); toast.success('Mood logged ✓'); onChanged()
+      await api.addMood({ log_date: mf.date, mood: mf.mood, energy: mf.energy }); toast.success('Mood logged ✓'); onChanged()
     } catch (err) { toast.error(err.message) }
   }
   async function saveDaily(e) {

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../api.js'
 
-export default function Settings({ me, onSaved }) {
+export default function Settings({ me, onSaved, onProfileSaved, onAccountDeleted }) {
   const [form, setForm] = useState({
     avg_cycle_length: 28, avg_period_length: 5, luteal_phase_length: 14,
     birth_control: '', notifications_enabled: true,
   })
   const [account, setAccount] = useState(null)
+  const [profile, setProfile] = useState({ email: '', name: '' })
 
   useEffect(() => {
     if (!me) return
@@ -20,6 +21,7 @@ export default function Settings({ me, onSaved }) {
       notifications_enabled: !!s.notifications_enabled,
     })
     setAccount(me.user)
+    setProfile({ email: me.user?.email || '', name: me.user?.name || '' })
   }, [me])
 
   async function save(e) {
@@ -34,6 +36,25 @@ export default function Settings({ me, onSaved }) {
       })
       toast.success('Settings saved ✓')
       onSaved && onSaved(updated)
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault()
+    try {
+      const updated = await api.updateMe({ email: profile.email.trim(), name: profile.name.trim() })
+      setAccount(updated)
+      onProfileSaved && onProfileSaved(updated)
+      toast.success('Profile saved ✓')
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm('Delete your account and all logged data? This cannot be undone.')) return
+    try {
+      await api.deleteMe()
+      toast.success('Account deleted')
+      onAccountDeleted && onAccountDeleted()
     } catch (err) { toast.error(err.message) }
   }
 
@@ -73,11 +94,25 @@ export default function Settings({ me, onSaved }) {
       <article className="card">
         <h3>Account</h3>
         {account && (
-          <ul className="stats-list">
-            <li><span>Email</span><b>{account.email}</b></li>
-            <li><span>Name</span><b>{account.name || '—'}</b></li>
-            <li><span>Member since</span><b>{(account.created_at || '').slice(0, 10)}</b></li>
-          </ul>
+          <>
+            <form onSubmit={saveProfile} className="stack">
+              <label className="field"><span>Email</span>
+                <input type="email" required value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
+              </label>
+              <label className="field"><span>Name</span>
+                <input type="text" value={profile.name}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+              </label>
+              <button className="btn dark full">Save profile</button>
+            </form>
+            <ul className="stats-list" style={{ marginTop: 18 }}>
+              <li><span>Member since</span><b>{(account.created_at || '').slice(0, 10)}</b></li>
+            </ul>
+            <button className="btn danger full" style={{ marginTop: 18 }} onClick={deleteAccount}>
+              Delete account
+            </button>
+          </>
         )}
       </article>
     </div>

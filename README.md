@@ -34,7 +34,8 @@ The script builds the frontend and starts the server at http://localhost:8000.
 | Frontend | React 18 + Vite, Recharts, Phosphor icons | UI, charts, calendar |
 | Backend | Flask (Python) + Pydantic | REST API, validation, predictions |
 | Auth | bcrypt + PyJWT | password hashing, token sessions |
-| Database | SQLite (dev) / Oracle Autonomous (prod) | persistence |
+| Database | SQLite fallback / Oracle Autonomous (prod) | persistence |
+| Oracle ORM | Flask-SQLAlchemy + python-oracledb | Oracle models, sessions, CRUD, reports |
 
 ### Project structure
 
@@ -42,7 +43,9 @@ The script builds the frontend and starts the server at http://localhost:8000.
 ├── backend/
 │   ├── main.py        # app entry: routes, static serving, SPA fallback
 │   ├── cycle.py       # pure logic: averages, predictions, phases, day tagging
-│   ├── database.py    # dual-mode DB layer (SQLite ⇄ Oracle), schema creation
+│   ├── database.py    # selects exactly one database backend
+│   ├── database_sqlite.py  # temporary SQLite fallback and shared-schema adapter
+│   ├── database_oracle.py  # Oracle ORM models and SQLAlchemy data access
 │   ├── auth.py        # hashing, JWT issue/verify, "current user" dependency
 │   └── config.py      # reads env vars (DB_MODE, ORACLE_*, JWT_SECRET)
 └── frontend/
@@ -61,7 +64,7 @@ Every call follows the same path:
 React page → api.js (adds Authorization: Bearer <jwt>)
            → Flask route (Pydantic validates the JSON body)
            → get_current_user_id() decodes the token → user_id
-           → database.py runs SQL scoped by that user_id
+           → selected database backend runs user-scoped data access
            → rows returned as plain JSON
 ```
 
@@ -69,21 +72,25 @@ React page → api.js (adds Authorization: Bearer <jwt>)
 - **Passwords** are never stored — only a bcrypt hash. Login = `bcrypt.verify(input, hash)`.
 - **Isolation:** every query filters `WHERE user_id = :uid`, so accounts can't see each other's data.
 
-### Database layer (`database.py`)
+### Database layer
 
-One context manager, two engines:
+`database.py` is only a backend selector. It imports either `database_sqlite.py`
+or `database_oracle.py`, never both data-access implementations at runtime.
 
-```python
-with db.get_conn() as conn:   # SQLite connection or Oracle pool session
-    ...
-db.q(sql_oracle, sql_sqlite, params)   # engine-specific query helper
-db.ex(sql, params)                     # writes; commit handled by context
-```
-
-- `DB_MODE=sqlite` (default) → thread-local `sqlite3` connections, zero setup, file at `backend/flow.db`.
-- `DB_MODE=oracle` → `oracledb` connection pool built from `ORACLE_DB_*` env vars (DSN or host/port/service, optional wallet for mTLS).
-- On startup `init_db()` creates all tables if missing (checked via catalog queries — safe to restart anytime).
-- Numeric settings come back as floats from both engines' drivers; `cycle.py` coerces them to ints before doing date math.
+- `DB_MODE=sqlite` (default) → thread-local `sqlite3` connections, zero setup,
+  with the file at `backend/flow.db`. SQLite reads `sql/oracle_schema.sql` and
+  applies a small Oracle-to-SQLite type/default translation because that is the
+  temporary local fallback.
+- `DB_MODE=oracle` → `database_oracle.py` configures Flask-SQLAlchemy with the
+  `oracle+oracledb` dialect. Its ORM models represent all six tables, and its
+  ORM session handles CRUD, aggregates, joins, and report queries. The
+  `ORACLE_DB_*` environment variables configure the DSN or host/port/service;
+  an optional wallet is supported for mTLS.
+- `sql/oracle_schema.sql` remains the Oracle SQL script for manual database
+  setup and submission. For normal Oracle startup, SQLAlchemy's metadata
+  creates only missing tables and indexes.
+- Numeric settings are normalized by each backend; `cycle.py` also coerces
+  them to ints before doing date math.
 
 ### Tables
 
@@ -146,7 +153,8 @@ export ORACLE_DB_WALLET_PASSWORD='...'
 export JWT_SECRET=$(python -c "import secrets;print(secrets.token_hex(32))")
 ```
 
-3. Start as above. Tables are created automatically on first boot (`users`, `periods`, `symptoms`, `moods`, `daily_logs`, `settings`).
+3. Start as above. Flask-SQLAlchemy creates missing tables and indexes on first
+   boot (`users`, `periods`, `symptoms`, `moods`, `daily_logs`, `settings`).
 
 ## API summary (`/api` prefix)
 

@@ -46,6 +46,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [overview, setOverview] = useState(null)
   const [periods, setPeriods] = useState([])
+  const [reports, setReports] = useState(null)
   const [dataError, setDataError] = useState(null)
 
   useEffect(() => registerToast(toast), [])
@@ -82,6 +83,12 @@ export default function App() {
     try {
       const [ov, ps] = await Promise.all([api.overview(), api.periods()])
       setOverview(ov); setPeriods(ps); setDataError(null)
+      // Reports are supplementary to the main dashboard.  Keep a report
+      // query failure from taking down the existing working screens.
+      const reportToken = getToken()
+      api.reports()
+        .then((value) => { if (getToken() === reportToken) setReports(value) })
+        .catch(() => { if (getToken() === reportToken) setReports(null) })
       return true
     } catch (e) {
       setDataError(e.message)
@@ -123,7 +130,7 @@ export default function App() {
 
   async function handleLogout() {
     clearToken()
-    setUser(null); setMe(null); setOverview(null); setPeriods([]); navigate('login', { replace: true })
+    setUser(null); setMe(null); setOverview(null); setPeriods([]); setReports(null); navigate('login', { replace: true })
   }
 
   async function quickPeriodStart() {
@@ -156,8 +163,16 @@ export default function App() {
     calendar: <CalendarPage periods={periods} onChanged={refreshAll} />,
     log: <LogPage onChanged={refreshAll} />,
     history: <HistoryPage onChanged={refreshAll} />,
-    insights: <Insights overview={overview} periods={periods} dataError={dataError} onRetry={refreshAll} />,
-    settings: <Settings me={me} onSaved={refreshAll} />,
+    insights: <Insights overview={overview} periods={periods} reports={reports} dataError={dataError} onRetry={refreshAll} />,
+    settings: <Settings
+      me={me}
+      onSaved={refreshAll}
+      onProfileSaved={(updated) => {
+        setMe((current) => current ? { ...current, user: updated } : current)
+        setUser((current) => current ? { ...current, email: updated.email, name: updated.name || '' } : current)
+      }}
+      onAccountDeleted={handleLogout}
+    />,
   }
 
   return (

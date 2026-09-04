@@ -1,7 +1,7 @@
 import {
   SquaresFour, CalendarBlank, PlusCircle, ClockCounterClockwise,
   ChartBar, Gear, SignOut, Download, CaretLeft, CaretRight, X,
-  HeartStraight, Globe, List,
+  HeartStraight, Globe, List, PencilSimple,
 } from '@phosphor-icons/react'
 
 // Central icon registry — Phosphor (default weight), sizes via props.
@@ -20,4 +20,5 @@ export const icons = {
   heart: <HeartStraight size={18} />,
   globe: <Globe size={18} />,
   menu: <List size={22} />,
+  edit: <PencilSimple size={16} />,
 }
